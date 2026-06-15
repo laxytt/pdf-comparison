@@ -18,6 +18,7 @@ python -m PyInstaller `
     --onefile `
     --name PDFDiffStudio `
     --paths src `
+    --collect-data spellchecker `
     src\pdfdiffstudio\__main__.py
 
 Write-Host ""

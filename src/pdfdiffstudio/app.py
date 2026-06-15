@@ -8,9 +8,12 @@ from PySide6.QtCore import Qt, QThread, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
+    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
+    QHeaderView,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -24,6 +27,8 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTextBrowser,
     QToolBar,
     QVBoxLayout,
@@ -32,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from pdfdiffstudio import __version__
 from pdfdiffstudio.pdf_compare import PdfComparisonResult, VisualDiffResult, build_page_diff, compare_pdfs, render_visual_diff
+from pdfdiffstudio.typing_validator import TypingValidationResult, validate_typing
 
 
 APP_NAME = "PDF Diff Studio"
@@ -197,6 +203,23 @@ class VisualWorker(QThread):
             self.failed.emit(self.page_index, traceback.format_exc())
 
 
+class TypingWorker(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, comparison: PdfComparisonResult, language_mode: str) -> None:
+        super().__init__()
+        self.comparison = comparison
+        self.language_mode = language_mode
+
+    def run(self) -> None:
+        try:
+            result = validate_typing(self.comparison, self.language_mode)
+            self.completed.emit(result)
+        except Exception:
+            self.failed.emit(traceback.format_exc())
+
+
 class ImagePane(QWidget):
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -251,6 +274,7 @@ class MainWindow(QMainWindow):
         self.result: PdfComparisonResult | None = None
         self.compare_worker: CompareWorker | None = None
         self.visual_worker: VisualWorker | None = None
+        self.typing_worker: TypingWorker | None = None
         self.visual_workers: list[VisualWorker] = []
         self.theme_name = "dark" if self._system_prefers_dark() else "light"
         self._syncing_scroll = False
@@ -324,9 +348,12 @@ class MainWindow(QMainWindow):
         visual_layout.addWidget(self.visual_note)
         visual_layout.addWidget(visual_splitter, 1)
 
+        typing_container = self._build_typing_tab()
+
         self.tabs = QTabWidget()
         self.tabs.addTab(text_splitter, "Text")
         self.tabs.addTab(visual_container, "Visual")
+        self.tabs.addTab(typing_container, "Typing")
 
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
@@ -357,6 +384,47 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(root)
         self.setStatusBar(QStatusBar())
+
+    def _build_typing_tab(self) -> QWidget:
+        self.typing_language = QComboBox()
+        self.typing_language.addItem("Auto detect", "auto")
+        self.typing_language.addItem("English", "en")
+        self.typing_language.addItem("Dutch", "nl")
+
+        self.typing_check_button = QPushButton("Run typing check")
+        self.typing_check_button.clicked.connect(self._start_typing_check)
+
+        self.typing_summary = QLabel("Compare PDFs to check English or Dutch typing.")
+        self.typing_summary.setObjectName("visualNote")
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Language"))
+        controls.addWidget(self.typing_language)
+        controls.addWidget(self.typing_check_button)
+        controls.addStretch(1)
+
+        self.typing_table = QTableWidget(0, 7)
+        self.typing_table.setHorizontalHeaderLabels(
+            ["Source", "Page", "Line", "Language", "Word", "Suggestions", "Context"]
+        )
+        self.typing_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.typing_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.typing_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.typing_table.setAlternatingRowColors(True)
+        self.typing_table.setSortingEnabled(True)
+        header = self.typing_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        for column in range(6):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addLayout(controls)
+        layout.addWidget(self.typing_summary)
+        layout.addWidget(self.typing_table, 1)
+        return container
 
     def _apply_style(self) -> None:
         colors = APP_THEMES[self.theme_name]
@@ -432,19 +500,39 @@ class MainWindow(QMainWindow):
             QPushButton#primaryButton:hover {
                 background: %(primary_hover)s;
             }
-            QListWidget, QTextBrowser, QScrollArea {
+            QListWidget, QTextBrowser, QScrollArea, QTableWidget, QComboBox {
                 background: %(panel)s;
                 color: %(text)s;
                 border: 1px solid %(border)s;
                 border-radius: 6px;
             }
+            QComboBox {
+                padding: 6px 10px;
+            }
+            QComboBox QAbstractItemView {
+                background: %(panel)s;
+                color: %(text)s;
+                border: 1px solid %(border)s;
+                selection-background-color: %(selection)s;
+                selection-color: %(selection_text)s;
+            }
             QListWidget::item {
                 padding: 4px;
                 color: %(text)s;
             }
-            QListWidget::item:selected {
+            QListWidget::item:selected, QTableWidget::item:selected {
                 background: %(selection)s;
                 color: %(selection_text)s;
+            }
+            QTableWidget {
+                gridline-color: %(border)s;
+                alternate-background-color: %(surface)s;
+            }
+            QHeaderView::section {
+                background: %(button_bg)s;
+                color: %(text)s;
+                border: 1px solid %(border)s;
+                padding: 5px 7px;
             }
             QTabWidget::pane {
                 border: 1px solid %(border)s;
@@ -481,6 +569,10 @@ class MainWindow(QMainWindow):
         self.compare_button.setEnabled(ready and not busy)
         self.open_left_action.setEnabled(self.left_slot.path is not None)
         self.open_right_action.setEnabled(self.right_slot.path is not None)
+        if hasattr(self, "typing_check_button"):
+            typing_busy = self.typing_worker is not None and self.typing_worker.isRunning()
+            self.typing_check_button.setEnabled(self.result is not None and not typing_busy)
+            self.typing_language.setEnabled(not typing_busy)
 
     def _set_dark_mode(self, enabled: bool) -> None:
         next_theme = "dark" if enabled else "light"
@@ -502,6 +594,8 @@ class MainWindow(QMainWindow):
         self.page_list.clear()
         self.left_text.clear()
         self.right_text.clear()
+        self.typing_table.setRowCount(0)
+        self.typing_summary.setText("Typing check will run after comparison.")
         self._set_visual_messages("Waiting for comparison")
         self.progress.setVisible(True)
         self.progress.setValue(0)
@@ -531,6 +625,7 @@ class MainWindow(QMainWindow):
         if result.pages:
             self.page_list.setCurrentRow(first_changed)
         self.statusBar().showMessage("Comparison complete")
+        self._start_typing_check()
 
     def _on_compare_failed(self, detail: str) -> None:
         self.summary_label.setText("Comparison failed.")
@@ -541,6 +636,72 @@ class MainWindow(QMainWindow):
         self.progress.setVisible(False)
         self.compare_worker = None
         self._update_compare_state()
+
+    def _start_typing_check(self) -> None:
+        if self.result is None:
+            return
+        if self.typing_worker is not None and self.typing_worker.isRunning():
+            return
+
+        self.typing_table.setSortingEnabled(False)
+        self.typing_table.setRowCount(0)
+        self.typing_table.setSortingEnabled(True)
+        mode = self.typing_language.currentData()
+        label = self.typing_language.currentText()
+        self.typing_summary.setText(f"Checking typing in {label.lower()}...")
+        self.statusBar().showMessage("Checking typing")
+
+        self.typing_worker = TypingWorker(self.result, mode)
+        self.typing_worker.completed.connect(self._on_typing_done)
+        self.typing_worker.failed.connect(self._on_typing_failed)
+        self.typing_worker.finished.connect(self._on_typing_finished)
+        self.typing_worker.start()
+        self._update_compare_state()
+
+    def _on_typing_done(self, result: TypingValidationResult) -> None:
+        self._populate_typing_issues(result)
+        issue_count = len(result.issues)
+        mode = self.typing_language.currentText()
+        suffix = " Showing first 1000 issues." if result.truncated else ""
+        if issue_count == 0:
+            self.typing_summary.setText(f"No likely typing issues found in {mode.lower()} ({result.checked_words} words checked).")
+        else:
+            self.typing_summary.setText(
+                f"{issue_count} likely typing issue{'s' if issue_count != 1 else ''} found "
+                f"in {mode.lower()} ({result.checked_words} words checked).{suffix}"
+            )
+        self.statusBar().showMessage("Typing check complete")
+
+    def _on_typing_failed(self, detail: str) -> None:
+        self.typing_summary.setText("Typing check failed.")
+        self.statusBar().showMessage("Typing check failed")
+        QMessageBox.warning(self, "Typing check failed", detail)
+
+    def _on_typing_finished(self) -> None:
+        self.typing_worker = None
+        self._update_compare_state()
+
+    def _populate_typing_issues(self, result: TypingValidationResult) -> None:
+        self.typing_table.setSortingEnabled(False)
+        self.typing_table.setRowCount(len(result.issues))
+        for row, issue in enumerate(result.issues):
+            values = [
+                issue.source,
+                str(issue.page_number),
+                str(issue.line_number),
+                issue.language_name,
+                issue.word,
+                ", ".join(issue.suggestions) if issue.suggestions else "-",
+                issue.context,
+            ]
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if column in {1, 2}:
+                    item.setData(Qt.ItemDataRole.UserRole, int(value))
+                item.setToolTip(value)
+                self.typing_table.setItem(row, column, item)
+        self.typing_table.setSortingEnabled(True)
+        self.typing_table.resizeRowsToContents()
 
     def _populate_pages(self, result: PdfComparisonResult) -> None:
         colors = APP_THEMES[self.theme_name]
