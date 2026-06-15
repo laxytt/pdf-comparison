@@ -78,7 +78,6 @@ class PdfComparisonResult:
 class VisualDiffResult:
     left_image: Path
     right_image: Path
-    overlay_image: Path
     changed_ratio: float
 
 
@@ -209,7 +208,7 @@ def render_visual_diff(
     output_dir: str | Path | None = None,
 ) -> VisualDiffResult:
     fitz = _load_fitz()
-    Image, ImageChops = _load_pillow()
+    Image, ImageChops, ImageFilter = _load_pillow()
 
     left_pdf = Path(left_path)
     right_pdf = Path(right_path)
@@ -220,16 +219,15 @@ def render_visual_diff(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cache_key = _visual_cache_key(left_pdf, right_pdf, page_index, dpi, threshold)
-    left_output = out_dir / f"{cache_key}_left.png"
-    right_output = out_dir / f"{cache_key}_right.png"
-    overlay_output = out_dir / f"{cache_key}_overlay.png"
+    left_output = out_dir / f"{cache_key}_left_marked.png"
+    right_output = out_dir / f"{cache_key}_right_marked.png"
     ratio_output = out_dir / f"{cache_key}_ratio.txt"
-    if left_output.exists() and right_output.exists() and overlay_output.exists() and ratio_output.exists():
+    if left_output.exists() and right_output.exists() and ratio_output.exists():
         try:
             changed_ratio = float(ratio_output.read_text(encoding="utf-8"))
         except ValueError:
             changed_ratio = 0.0
-        return VisualDiffResult(left_output, right_output, overlay_output, changed_ratio=changed_ratio)
+        return VisualDiffResult(left_output, right_output, changed_ratio=changed_ratio)
 
     left_image = _render_page_image(fitz, Image, left_pdf, page_index, dpi)
     right_image = _render_page_image(fitz, Image, right_pdf, page_index, dpi)
@@ -248,20 +246,18 @@ def render_visual_diff(
 
     difference = ImageChops.difference(left_canvas, right_canvas).convert("L")
     mask = difference.point(lambda value: 255 if value > threshold else 0)
+    mask = mask.filter(ImageFilter.MaxFilter(7))
     mask_data = mask.get_flattened_data() if hasattr(mask, "get_flattened_data") else mask.getdata()
     changed_pixels = sum(1 for value in mask_data if value)
     changed_ratio = changed_pixels / float(target_size[0] * target_size[1])
 
-    right_rgba = right_canvas.convert("RGBA")
-    highlight = Image.new("RGBA", target_size, (229, 57, 53, 105))
-    highlighted = Image.alpha_composite(right_rgba, highlight)
-    overlay = Image.composite(highlighted, right_rgba, mask)
+    left_marked = _highlight_image(Image, left_canvas, mask, (220, 38, 38, 95))
+    right_marked = _highlight_image(Image, right_canvas, mask, (22, 163, 74, 95))
 
-    left_canvas.save(left_output)
-    right_canvas.save(right_output)
-    overlay.convert("RGB").save(overlay_output)
+    left_marked.save(left_output)
+    right_marked.save(right_output)
     ratio_output.write_text(str(changed_ratio), encoding="utf-8")
-    return VisualDiffResult(left_output, right_output, overlay_output, changed_ratio=changed_ratio)
+    return VisualDiffResult(left_output, right_output, changed_ratio=changed_ratio)
 
 
 def _split_lines(text: str) -> list[str]:
@@ -393,6 +389,7 @@ def _require_pdf(path: Path) -> None:
 
 def _visual_cache_key(left_pdf: Path, right_pdf: Path, page_index: int, dpi: int, threshold: int) -> str:
     parts = [
+        "split-visual-v2",
         str(left_pdf.resolve()),
         str(left_pdf.stat().st_mtime_ns),
         str(right_pdf.resolve()),
@@ -420,6 +417,13 @@ def _pad_image(Image, image, size: tuple[int, int]):
     return canvas
 
 
+def _highlight_image(Image, base_image, mask, color: tuple[int, int, int, int]):
+    base_rgba = base_image.convert("RGBA")
+    highlight = Image.new("RGBA", base_image.size, color)
+    highlighted = Image.alpha_composite(base_rgba, highlight)
+    return Image.composite(highlighted, base_rgba, mask).convert("RGB")
+
+
 def _load_fitz():
     try:
         import fitz
@@ -430,10 +434,10 @@ def _load_fitz():
 
 def _load_pillow():
     try:
-        from PIL import Image, ImageChops
+        from PIL import Image, ImageChops, ImageFilter
     except ImportError as exc:
         raise RuntimeError("Pillow is required. Install dependencies with: python -m pip install -r requirements.txt") from exc
-    return Image, ImageChops
+    return Image, ImageChops, ImageFilter
 
 
 def _emit(progress: ProgressCallback | None, message: str, percent: int) -> None:

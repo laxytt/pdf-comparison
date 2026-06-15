@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfdiffstudio"
-version = "0.1.0"
+version = "0.1.1"
 description = "Portable desktop app for comparing two PDF files."
 requires-python = ">=3.10"
 dependencies = [

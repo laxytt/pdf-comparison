@@ -31,7 +31,6 @@ class PdfIntegrationTests(unittest.TestCase):
             visual = render_visual_diff(left_pdf, right_pdf, 0, dpi=72, output_dir=root / "visual")
             self.assertTrue(visual.left_image.exists())
             self.assertTrue(visual.right_image.exists())
-            self.assertTrue(visual.overlay_image.exists())
             self.assertGreater(visual.changed_ratio, 0)
 
     @staticmethod

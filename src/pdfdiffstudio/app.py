@@ -255,16 +255,14 @@ class MainWindow(QMainWindow):
         text_splitter.addWidget(self._labeled_widget("Second PDF", self.right_text))
         text_splitter.setSizes([1, 1])
 
-        self.left_image = ImagePane("First PDF")
-        self.right_image = ImagePane("Second PDF")
-        self.overlay_image = ImagePane("Changes")
+        self.left_image = ImagePane("First PDF - red changed areas")
+        self.right_image = ImagePane("Second PDF - green changed areas")
         visual_splitter = QSplitter(Qt.Orientation.Horizontal)
         visual_splitter.addWidget(self.left_image)
         visual_splitter.addWidget(self.right_image)
-        visual_splitter.addWidget(self.overlay_image)
-        visual_splitter.setSizes([1, 1, 1])
+        visual_splitter.setSizes([1, 1])
 
-        self.visual_note = QLabel("Select a page to render its visual comparison.")
+        self.visual_note = QLabel("Select a page to render separate visual highlights.")
         self.visual_note.setObjectName("visualNote")
         visual_container = QWidget()
         visual_layout = QVBoxLayout(visual_container)
@@ -466,8 +464,10 @@ class MainWindow(QMainWindow):
             return
         self.left_image.set_image(result.left_image)
         self.right_image.set_image(result.right_image)
-        self.overlay_image.set_image(result.overlay_image)
-        self.visual_note.setText(f"Page {page_index + 1}: visual change area {result.changed_ratio:.2%}.")
+        self.visual_note.setText(
+            f"Page {page_index + 1}: red marks changed areas in the first PDF, "
+            f"green marks changed areas in the second PDF. Visual change area {result.changed_ratio:.2%}."
+        )
 
     def _on_visual_failed(self, page_index: int, detail: str) -> None:
         if self.page_list.currentRow() != page_index:
@@ -487,7 +487,6 @@ class MainWindow(QMainWindow):
     def _set_visual_messages(self, message: str) -> None:
         self.left_image.set_message(message)
         self.right_image.set_message(message)
-        self.overlay_image.set_message(message)
 
     def _sync_scroll(self, source: QTextBrowser, target: QTextBrowser, value: int) -> None:
         if self._syncing_scroll:
