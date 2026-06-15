@@ -89,6 +89,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             release-assets/PDFDiffStudio-Windows/PDFDiffStudio.exe \
