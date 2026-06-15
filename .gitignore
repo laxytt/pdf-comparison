@@ -1,6 +1,7 @@
 .venv/
 build/
-dist/
+dist/*
+!dist/PDFDiffStudio.exe
 __pycache__/
 *.py[cod]
 .pytest_cache/
