@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdfdiffstudio"
+version = "0.1.0"
+description = "Portable desktop app for comparing two PDF files."
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.7",
+    "PyMuPDF>=1.24",
+    "Pillow>=10.4",
+]
+
+[project.scripts]
+pdfdiffstudio = "pdfdiffstudio.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
