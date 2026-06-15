@@ -5,7 +5,7 @@ import sys
 import traceback
 
 from PySide6.QtCore import Qt, QThread, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -31,10 +31,56 @@ from PySide6.QtWidgets import (
 )
 
 from pdfdiffstudio import __version__
-from pdfdiffstudio.pdf_compare import PdfComparisonResult, VisualDiffResult, compare_pdfs, render_visual_diff
+from pdfdiffstudio.pdf_compare import PdfComparisonResult, VisualDiffResult, build_page_diff, compare_pdfs, render_visual_diff
 
 
 APP_NAME = "PDF Diff Studio"
+
+
+APP_THEMES = {
+    "light": {
+        "window": "#f6f3ea",
+        "surface": "#fffdf7",
+        "panel": "#fffdf8",
+        "border": "#d7d1c2",
+        "text": "#232323",
+        "muted": "#4b5563",
+        "button_bg": "#fffaf0",
+        "button_hover": "#f5eddc",
+        "button_disabled_bg": "#eeeae0",
+        "button_disabled_text": "#999999",
+        "primary": "#273b2d",
+        "primary_hover": "#34503d",
+        "primary_text": "#ffffff",
+        "selection": "#335c43",
+        "selection_text": "#ffffff",
+        "item_unchanged_fg": "#4b5563",
+        "item_added_bg": "#e7f6ea",
+        "item_removed_bg": "#ffe7e4",
+        "item_changed_bg": "#fff5cf",
+    },
+    "dark": {
+        "window": "#17191c",
+        "surface": "#20242a",
+        "panel": "#1b1f24",
+        "border": "#3c434d",
+        "text": "#edf0f3",
+        "muted": "#a8b0bc",
+        "button_bg": "#2a3038",
+        "button_hover": "#333b45",
+        "button_disabled_bg": "#252a31",
+        "button_disabled_text": "#727b88",
+        "primary": "#3f8f5f",
+        "primary_hover": "#4ca66f",
+        "primary_text": "#07140c",
+        "selection": "#4c8f68",
+        "selection_text": "#07140c",
+        "item_unchanged_fg": "#a8b0bc",
+        "item_added_bg": "#183425",
+        "item_removed_bg": "#3b1f22",
+        "item_changed_bg": "#3a3119",
+    },
+}
 
 
 class PdfSlot(QFrame):
@@ -206,6 +252,7 @@ class MainWindow(QMainWindow):
         self.compare_worker: CompareWorker | None = None
         self.visual_worker: VisualWorker | None = None
         self.visual_workers: list[VisualWorker] = []
+        self.theme_name = "dark" if self._system_prefers_dark() else "light"
         self._syncing_scroll = False
 
         self._build_ui()
@@ -226,11 +273,17 @@ class MainWindow(QMainWindow):
         self.open_left_action.triggered.connect(lambda: self._open_pdf(self.left_slot.path))
         self.open_right_action = QAction("Open second PDF", self)
         self.open_right_action.triggered.connect(lambda: self._open_pdf(self.right_slot.path))
+        self.theme_action = QAction("Dark mode", self)
+        self.theme_action.setCheckable(True)
+        self.theme_action.setChecked(self.theme_name == "dark")
+        self.theme_action.toggled.connect(self._set_dark_mode)
 
         toolbar = QToolBar("Main")
         toolbar.setMovable(False)
         toolbar.addAction(self.open_left_action)
         toolbar.addAction(self.open_right_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.theme_action)
         self.addToolBar(toolbar)
 
         self.summary_label = QLabel("Attach two PDFs to compare.")
@@ -306,65 +359,120 @@ class MainWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
 
     def _apply_style(self) -> None:
+        colors = APP_THEMES[self.theme_name]
+        app = QApplication.instance()
+        if app is not None:
+            app.setPalette(_build_palette(colors))
         self.setStyleSheet(
             """
             QMainWindow {
-                background: #f6f3ea;
+                background: %(window)s;
+                color: %(text)s;
+            }
+            QToolBar {
+                background: %(window)s;
+                border-bottom: 1px solid %(border)s;
+                spacing: 6px;
+            }
+            QToolBar QToolButton {
+                padding: 6px 10px;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                color: %(text)s;
+            }
+            QToolBar QToolButton:hover {
+                background: %(button_hover)s;
+                border-color: %(border)s;
+            }
+            QToolBar QToolButton:checked {
+                background: %(primary)s;
+                color: %(primary_text)s;
+                border-color: %(primary)s;
             }
             QFrame#pdfSlot {
-                background: #fffdf7;
-                border: 1px solid #d7d1c2;
+                background: %(surface)s;
+                border: 1px solid %(border)s;
                 border-radius: 8px;
             }
             QLabel#slotTitle, QLabel#summaryLabel, QLabel#imagePaneTitle {
                 font-weight: 700;
-                color: #232323;
+                color: %(text)s;
             }
             QLabel#fileLabel {
-                color: #4b5563;
+                color: %(muted)s;
             }
             QLabel#visualNote {
-                color: #4b5563;
+                color: %(muted)s;
                 padding: 2px 0;
+            }
+            QLabel {
+                color: %(text)s;
             }
             QPushButton {
                 padding: 7px 12px;
-                border: 1px solid #b9b09b;
+                border: 1px solid %(border)s;
                 border-radius: 6px;
-                background: #fffaf0;
-                color: #242424;
+                background: %(button_bg)s;
+                color: %(text)s;
             }
             QPushButton:hover {
-                background: #f5eddc;
+                background: %(button_hover)s;
             }
             QPushButton:disabled {
-                color: #999;
-                background: #eeeae0;
+                color: %(button_disabled_text)s;
+                background: %(button_disabled_bg)s;
             }
             QPushButton#primaryButton {
                 min-width: 116px;
                 font-weight: 700;
-                background: #273b2d;
-                border-color: #273b2d;
-                color: white;
+                background: %(primary)s;
+                border-color: %(primary)s;
+                color: %(primary_text)s;
             }
             QPushButton#primaryButton:hover {
-                background: #34503d;
+                background: %(primary_hover)s;
             }
             QListWidget, QTextBrowser, QScrollArea {
-                background: #fffdf8;
-                border: 1px solid #d7d1c2;
+                background: %(panel)s;
+                color: %(text)s;
+                border: 1px solid %(border)s;
                 border-radius: 6px;
             }
+            QListWidget::item {
+                padding: 4px;
+                color: %(text)s;
+            }
+            QListWidget::item:selected {
+                background: %(selection)s;
+                color: %(selection_text)s;
+            }
             QTabWidget::pane {
-                border: 1px solid #d7d1c2;
+                border: 1px solid %(border)s;
                 border-radius: 6px;
-                background: #fffdf8;
+                background: %(panel)s;
             }
             QTabBar::tab {
                 padding: 8px 14px;
+                color: %(text)s;
+                background: %(button_bg)s;
+                border: 1px solid %(border)s;
+                border-bottom: none;
+            }
+            QTabBar::tab:selected {
+                background: %(panel)s;
+            }
+            QProgressBar {
+                border: 1px solid %(border)s;
+                border-radius: 6px;
+                color: %(text)s;
+                background: %(panel)s;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background: %(primary)s;
             }
             """
+            % colors
         )
 
     def _update_compare_state(self) -> None:
@@ -373,6 +481,19 @@ class MainWindow(QMainWindow):
         self.compare_button.setEnabled(ready and not busy)
         self.open_left_action.setEnabled(self.left_slot.path is not None)
         self.open_right_action.setEnabled(self.right_slot.path is not None)
+
+    def _set_dark_mode(self, enabled: bool) -> None:
+        next_theme = "dark" if enabled else "light"
+        if next_theme == self.theme_name:
+            return
+        self.theme_name = next_theme
+        self._apply_style()
+        current_row = self.page_list.currentRow()
+        if self.result is not None:
+            self._populate_pages(self.result)
+            if 0 <= current_row < len(self.result.pages):
+                self.page_list.setCurrentRow(current_row)
+                self._show_text_page(current_row)
 
     def _start_compare(self) -> None:
         if self.left_slot.path is None or self.right_slot.path is None:
@@ -422,6 +543,7 @@ class MainWindow(QMainWindow):
         self._update_compare_state()
 
     def _populate_pages(self, result: PdfComparisonResult) -> None:
+        colors = APP_THEMES[self.theme_name]
         self.page_list.clear()
         for page in result.pages:
             similarity = int(page.similarity * 100)
@@ -430,22 +552,28 @@ class MainWindow(QMainWindow):
                 f"+{page.added_lines} -{page.removed_lines} ~{page.changed_lines}   {similarity}%"
             )
             if page.status == "Unchanged":
-                item.setForeground(QColor("#4b5563"))
+                item.setForeground(QColor(colors["item_unchanged_fg"]))
             elif page.status == "Added":
-                item.setBackground(QColor("#e7f6ea"))
+                item.setBackground(QColor(colors["item_added_bg"]))
             elif page.status == "Removed":
-                item.setBackground(QColor("#ffe7e4"))
+                item.setBackground(QColor(colors["item_removed_bg"]))
             else:
-                item.setBackground(QColor("#fff5cf"))
+                item.setBackground(QColor(colors["item_changed_bg"]))
             self.page_list.addItem(item)
 
     def _show_page(self, row: int) -> None:
         if self.result is None or row < 0 or row >= len(self.result.pages):
             return
-        page = self.result.pages[row]
-        self.left_text.setHtml(page.left_html)
-        self.right_text.setHtml(page.right_html)
+        self._show_text_page(row)
         self._render_visual_page(row)
+
+    def _show_text_page(self, row: int) -> None:
+        if self.result is None or row < 0 or row >= len(self.result.pages):
+            return
+        page = self.result.pages[row]
+        themed_page = build_page_diff(page.page_number, page.left_text, page.right_text, theme=self.theme_name)
+        self.left_text.setHtml(themed_page.left_html)
+        self.right_text.setHtml(themed_page.right_html)
 
     def _render_visual_page(self, page_index: int) -> None:
         if self.result is None:
@@ -500,6 +628,13 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     @staticmethod
+    def _system_prefers_dark() -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return False
+        return app.palette().color(QPalette.ColorRole.Window).lightness() < 128
+
+    @staticmethod
     def _labeled_widget(title: str, widget: QWidget) -> QWidget:
         label = QLabel(title)
         label.setObjectName("imagePaneTitle")
@@ -510,6 +645,34 @@ class MainWindow(QMainWindow):
         layout.addWidget(label)
         layout.addWidget(widget, 1)
         return container
+
+
+def _build_palette(colors: dict[str, str]) -> QPalette:
+    palette = QPalette()
+    window = QColor(colors["window"])
+    panel = QColor(colors["panel"])
+    button = QColor(colors["button_bg"])
+    text = QColor(colors["text"])
+    muted = QColor(colors["muted"])
+    selection = QColor(colors["selection"])
+    selection_text = QColor(colors["selection_text"])
+
+    palette.setColor(QPalette.ColorRole.Window, window)
+    palette.setColor(QPalette.ColorRole.WindowText, text)
+    palette.setColor(QPalette.ColorRole.Base, panel)
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors["surface"]))
+    palette.setColor(QPalette.ColorRole.ToolTipBase, panel)
+    palette.setColor(QPalette.ColorRole.ToolTipText, text)
+    palette.setColor(QPalette.ColorRole.Text, text)
+    palette.setColor(QPalette.ColorRole.Button, button)
+    palette.setColor(QPalette.ColorRole.ButtonText, text)
+    palette.setColor(QPalette.ColorRole.BrightText, QColor("#ffffff"))
+    palette.setColor(QPalette.ColorRole.Highlight, selection)
+    palette.setColor(QPalette.ColorRole.HighlightedText, selection_text)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, muted)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, muted)
+    palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, muted)
+    return palette
 
 
 def run() -> int:

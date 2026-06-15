@@ -35,6 +35,14 @@ class PageDiffTests(unittest.TestCase):
         self.assertEqual(result.changed_lines, 0)
         self.assertEqual(result.similarity, 1.0)
 
+    def test_build_page_diff_can_render_dark_theme(self) -> None:
+        result = build_page_diff(4, "Old value", "New value", theme="dark")
+
+        self.assertIn("#17191c", result.left_html)
+        self.assertIn("#17191c", result.right_html)
+        self.assertIn("word-removed", result.left_html)
+        self.assertIn("word-added", result.right_html)
+
 
 if __name__ == "__main__":
     unittest.main()

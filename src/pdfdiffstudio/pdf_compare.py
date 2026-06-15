@@ -14,6 +14,44 @@ from typing import Callable
 ProgressCallback = Callable[[str, int], None]
 
 
+HTML_THEMES = {
+    "light": {
+        "body_bg": "#fbfbf8",
+        "body_text": "#202124",
+        "line_number": "#7a7f87",
+        "equal_bg": "#fbfbf8",
+        "changed_bg": "#fff5cf",
+        "changed_border": "#b7791f",
+        "added_bg": "#e7f6ea",
+        "added_border": "#2f855a",
+        "removed_bg": "#ffe7e4",
+        "removed_border": "#c53030",
+        "placeholder_bg": "#f0f1f2",
+        "placeholder_text": "#9aa0a6",
+        "word_added": "#a7f3bf",
+        "word_removed": "#ffb4ae",
+        "empty_text": "#6b7280",
+    },
+    "dark": {
+        "body_bg": "#17191c",
+        "body_text": "#e7e9ed",
+        "line_number": "#8f99a8",
+        "equal_bg": "#17191c",
+        "changed_bg": "#3a3119",
+        "changed_border": "#d79c31",
+        "added_bg": "#183425",
+        "added_border": "#3fb86f",
+        "removed_bg": "#3b1f22",
+        "removed_border": "#ef6b6b",
+        "placeholder_bg": "#242931",
+        "placeholder_text": "#818b99",
+        "word_added": "#2f7a4e",
+        "word_removed": "#8e3938",
+        "empty_text": "#9aa4b2",
+    },
+}
+
+
 @dataclass(frozen=True)
 class PdfPage:
     index: int
@@ -125,7 +163,7 @@ def extract_pdf_pages(path: str | Path) -> list[PdfPage]:
     return pages
 
 
-def build_page_diff(page_number: int, left_text: str, right_text: str) -> PageDiff:
+def build_page_diff(page_number: int, left_text: str, right_text: str, theme: str = "light") -> PageDiff:
     left_lines = _split_lines(left_text)
     right_lines = _split_lines(right_text)
     matcher = SequenceMatcher(None, left_lines, right_lines, autojunk=False)
@@ -190,8 +228,8 @@ def build_page_diff(page_number: int, left_text: str, right_text: str) -> PageDi
         page_number=page_number,
         left_text=left_text,
         right_text=right_text,
-        left_html=_document_html(left_rendered),
-        right_html=_document_html(right_rendered),
+        left_html=_document_html(left_rendered, theme),
+        right_html=_document_html(right_rendered, theme),
         added_lines=added,
         removed_lines=removed,
         changed_lines=changed,
@@ -278,7 +316,8 @@ def _line_html(line_number: int | None, kind: str, content: str) -> str:
     )
 
 
-def _document_html(lines: list[str]) -> str:
+def _document_html(lines: list[str], theme: str) -> str:
+    colors = HTML_THEMES.get(theme, HTML_THEMES["light"])
     body = "\n".join(lines) if lines else '<div class="empty">No extracted text on this page.</div>'
     return f"""<!doctype html>
 <html>
@@ -287,8 +326,8 @@ def _document_html(lines: list[str]) -> str:
 <style>
 body {{
     margin: 0;
-    background: #fbfbf8;
-    color: #202124;
+    background: {colors["body_bg"]};
+    color: {colors["body_text"]};
     font-family: Consolas, Menlo, Monaco, monospace;
     font-size: 12px;
 }}
@@ -303,7 +342,7 @@ body {{
     display: inline-block;
     width: 44px;
     padding-right: 8px;
-    color: #7a7f87;
+    color: {colors["line_number"]};
     text-align: right;
     user-select: none;
 }}
@@ -311,35 +350,35 @@ body {{
     white-space: pre-wrap;
 }}
 .equal {{
-    background: #fbfbf8;
+    background: {colors["equal_bg"]};
 }}
 .changed {{
-    background: #fff5cf;
-    border-left-color: #b7791f;
+    background: {colors["changed_bg"]};
+    border-left-color: {colors["changed_border"]};
 }}
 .added {{
-    background: #e7f6ea;
-    border-left-color: #2f855a;
+    background: {colors["added_bg"]};
+    border-left-color: {colors["added_border"]};
 }}
 .removed {{
-    background: #ffe7e4;
-    border-left-color: #c53030;
+    background: {colors["removed_bg"]};
+    border-left-color: {colors["removed_border"]};
 }}
 .placeholder {{
-    background: #f0f1f2;
-    color: #9aa0a6;
+    background: {colors["placeholder_bg"]};
+    color: {colors["placeholder_text"]};
 }}
 .word-added {{
-    background: #a7f3bf;
+    background: {colors["word_added"]};
     border-radius: 2px;
 }}
 .word-removed {{
-    background: #ffb4ae;
+    background: {colors["word_removed"]};
     border-radius: 2px;
 }}
 .empty {{
     padding: 18px;
-    color: #6b7280;
+    color: {colors["empty_text"]};
     font-family: Arial, sans-serif;
 }}
 </style>

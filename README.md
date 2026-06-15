@@ -7,6 +7,7 @@ It lets you attach two PDFs, compares their extracted page text, and shows:
 - A page-by-page change summary.
 - Side-by-side highlighted text differences.
 - A visual page comparison with changed pixels highlighted separately on each PDF.
+- Automatic light/dark mode support with a manual Dark mode toolbar toggle.
 
 ## Run from source
 
