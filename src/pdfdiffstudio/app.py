@@ -204,6 +204,7 @@ class VisualWorker(QThread):
 
 
 class TypingWorker(QThread):
+    progress = Signal(str, int)
     completed = Signal(object)
     failed = Signal(str)
 
@@ -214,7 +215,7 @@ class TypingWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = validate_typing(self.comparison, self.language_mode)
+            result = validate_typing(self.comparison, self.language_mode, progress=self.progress.emit)
             self.completed.emit(result)
         except Exception:
             self.failed.emit(traceback.format_exc())
@@ -625,7 +626,7 @@ class MainWindow(QMainWindow):
         if result.pages:
             self.page_list.setCurrentRow(first_changed)
         self.statusBar().showMessage("Comparison complete")
-        self._start_typing_check()
+        self.typing_summary.setText("Ready to check typing. Choose a language and click Run typing check.")
 
     def _on_compare_failed(self, detail: str) -> None:
         self.summary_label.setText("Comparison failed.")
@@ -648,15 +649,24 @@ class MainWindow(QMainWindow):
         self.typing_table.setSortingEnabled(True)
         mode = self.typing_language.currentData()
         label = self.typing_language.currentText()
+        self.progress.setVisible(True)
+        self.progress.setValue(0)
         self.typing_summary.setText(f"Checking typing in {label.lower()}...")
         self.statusBar().showMessage("Checking typing")
 
         self.typing_worker = TypingWorker(self.result, mode)
+        self.typing_worker.progress.connect(self._on_typing_progress)
         self.typing_worker.completed.connect(self._on_typing_done)
         self.typing_worker.failed.connect(self._on_typing_failed)
         self.typing_worker.finished.connect(self._on_typing_finished)
         self.typing_worker.start()
         self._update_compare_state()
+
+    def _on_typing_progress(self, message: str, percent: int) -> None:
+        self.progress.setVisible(True)
+        self.progress.setValue(percent)
+        self.typing_summary.setText(message)
+        self.statusBar().showMessage(message)
 
     def _on_typing_done(self, result: TypingValidationResult) -> None:
         self._populate_typing_issues(result)
@@ -678,6 +688,7 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "Typing check failed", detail)
 
     def _on_typing_finished(self) -> None:
+        self.progress.setVisible(False)
         self.typing_worker = None
         self._update_compare_state()
 

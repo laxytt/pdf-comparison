@@ -34,6 +34,18 @@ class TypingValidatorTests(unittest.TestCase):
         self.assertTrue(matching)
         self.assertEqual(matching[0].language_code, "nl")
 
+    def test_validate_typing_reports_progress_and_skips_codes(self) -> None:
+        result = self._comparison("AcmeCorp ships PDF ABCD with an exampel.", "")
+        progress_events: list[tuple[str, int]] = []
+
+        validation = validate_typing(result, "en", progress=lambda message, percent: progress_events.append((message, percent)))
+
+        issue_words = {issue.word for issue in validation.issues}
+        self.assertIn("exampel", issue_words)
+        self.assertNotIn("AcmeCorp", issue_words)
+        self.assertNotIn("ABCD", issue_words)
+        self.assertEqual(progress_events[-1][1], 100)
+
     @staticmethod
     def _comparison(left_text: str, right_text: str) -> PdfComparisonResult:
         page = build_page_diff(1, left_text, right_text)

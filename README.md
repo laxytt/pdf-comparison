@@ -8,7 +8,7 @@ It lets you attach two PDFs, compares their extracted page text, and shows:
 - Side-by-side highlighted text differences.
 - A visual page comparison with changed pixels highlighted separately on each PDF.
 - Automatic light/dark mode support with a manual Dark mode toolbar toggle.
-- A typing validation tab for English and Dutch spelling checks.
+- A typing validation tab for manual English and Dutch spelling checks.
 
 ## Run from source
 
